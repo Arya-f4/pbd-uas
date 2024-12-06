@@ -1,0 +1,112 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+    body {
+        @apply relative z-1 bg-whiten font-satoshi text-base font-normal text-body;
+    }
+}
+
+@layer utilities {
+
+    /* No-scrollbar */
+    .no-scrollbar::-webkit-scrollbar {
+        display: none;
+    }
+
+    .no-scrollbar {
+        -ms-overflow-style: none;
+        /* IE and Edge */
+        scrollbar-width: none;
+        /* Firefox */
+    }
+
+    /* Heights */
+    .chat-height {
+        @apply h-[calc(100vh_-_8.125rem)] lg:h-[calc(100vh_-_5.625rem)];
+    }
+
+    .inbox-height {
+        @apply h-[calc(100vh_-_8.125rem)] lg:h-[calc(100vh_-_5.625rem)];
+    }
+
+    /* Dark mode support */
+    .bg-gray {
+        @apply dark:bg-gray-800;
+        /* Replace with appropriate gray shade for dark mode */
+    }
+
+
+    .apexcharts-legend-text {
+        @apply text-body dark:text-bodydark;
+    }
+
+    .apexcharts-text {
+        @apply fill-body dark:fill-bodydark;
+    }
+
+    .apexcharts-xcrosshairs {
+        @apply fill-stroke dark:fill-strokedark;
+    }
+
+    .apexcharts-gridline {
+        @apply stroke-stroke dark:stroke-strokedark;
+    }
+
+    .apexcharts-series.apexcharts-pie-series path {
+        @apply dark:stroke-transparent;
+    }
+
+    .apexcharts-tooltip.apexcharts-theme-light {
+        @apply dark:border-strokedark dark:bg-boxdark;
+    }
+
+    .apexcharts-tooltip.apexcharts-theme-light .apexcharts-tooltip-title {
+        @apply dark:border-strokedark dark:bg-meta-4;
+    }
+
+    .apexcharts-xaxistooltip,
+    .apexcharts-yaxistooltip {
+        @apply dark:border-meta-4 dark:bg-meta-4 dark:text-bodydark1;
+    }
+
+    .flatpickr-day {
+        @apply text-bodydark hover:border-meta-4 hover:bg-meta-4;
+    }
+
+    .flatpickr-day.selected,
+    .flatpickr-day.startRange,
+    .flatpickr-day.endRange {
+        @apply text-white bg-meta-4 dark:bg-meta-4;
+    }
+}
+
+/* Third-party libraries CSS */
+
+.tableCheckbox:checked~div span {
+    @apply opacity-100;
+}
+
+.tableCheckbox:checked~div {
+    @apply border-primary bg-primary;
+}
+
+.apexcharts-legend-series {
+    @apply inline-flex gap-1.5;
+}
+
+/* Flatpickr custom styles */
+.flatpickr-wrapper {
+    @apply w-full;
+}
+
+.flatpickr-calendar {
+    @apply p-6 dark:bg-boxdark dark:text-bodydark dark:shadow-lg;
+}
+
+.map-btn .jvm-zoom-btn {
+    @apply flex h-7.5 w-7.5 items-center justify-center rounded border border-stroke bg-white px-0 pb-0.5 pt-0 text-2xl leading-none text-body hover:border-primary hover:bg-primary hover:text-white dark:border-strokedark dark:bg-meta-4 dark:text-bodydark dark:hover:border-primary dark:hover:bg-primary dark:hover:text-white;
+}
