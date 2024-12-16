@@ -8,6 +8,9 @@
     body {
         @apply relative z-1 bg-whiten font-satoshi text-base font-normal text-body;
     }
+    body.dark {
+        @apply bg-boxdark-2 text-bodydark;
+    }
 }
 
 @layer utilities {

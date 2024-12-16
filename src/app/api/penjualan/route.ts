@@ -2,77 +2,37 @@ import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { authenticate } from "@/lib/authMiddleware";
 
-export async function GET(request: Request) {
-  const authResult = await authenticate(request);
-  if (authResult instanceof NextResponse) return authResult;
-
-  try {
-    const connection = await pool.getConnection();
-    const [rows] = await connection.query(`
-      SELECT * FROM view_penjualan
-      ORDER BY sale_date DESC
-    `);
-    connection.release();
-
-    return NextResponse.json({
-      data: rows,
-      status: "success",
-    });
-  } catch (error) {
-    console.error("Error fetching penjualan:", error);
-    return NextResponse.json(
-      {
-        message: "Internal server error",
-        status: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 }
-    );
-  }
-}
-
 export async function POST(request: Request) {
   const authResult = await authenticate(request);
   if (authResult instanceof NextResponse) return authResult;
 
   try {
-    const { iduser, idmargin_penjualan, details } = await request.json();
+    const { subtotal_nilai, ppn, total_nilai, iduser, idmargin_penjualan, details } = await request.json();
     const connection = await pool.getConnection();
 
     await connection.beginTransaction();
 
     try {
-      const [result] = await connection.query(
-        "INSERT INTO penjualan (created_at, iduser, idmargin_penjualan) VALUES (NOW(), ?, ?)",
-        [iduser, idmargin_penjualan]
+      // Insert into penjualan table
+      const [penjualanResult] = await connection.query(
+        "INSERT INTO penjualan (created_at, subtotal_nilai, ppn, total_nilai, iduser, idmargin_penjualan) VALUES (NOW(), ?, ?, ?, ?, ?)",
+        [subtotal_nilai, ppn, total_nilai, iduser, idmargin_penjualan]
       );
-      const idpenjualan = result.insertId;
+      const idpenjualan = penjualanResult.insertId;
 
-      let subtotal_nilai = 0;
+      // Insert details into detail_penjualan table
       for (const detail of details) {
-        const { idbarang, jumlah, harga_satuan } = detail;
-        const subtotal = jumlah * harga_satuan;
-        subtotal_nilai += subtotal;
-
         await connection.query(
           "INSERT INTO detail_penjualan (harga_satuan, jumlah, subtotal, penjualan_idpenjualan, idbarang) VALUES (?, ?, ?, ?, ?)",
-          [harga_satuan, jumlah, subtotal, idpenjualan, idbarang]
+          [detail.harga_satuan, detail.jumlah, detail.subtotal, idpenjualan, detail.idbarang]
         );
       }
-
-      const ppn = subtotal_nilai * 0.11;
-      const total_nilai = subtotal_nilai + ppn;
-
-      await connection.query(
-        "UPDATE penjualan SET subtotal_nilai = ?, ppn = ?, total_nilai = ? WHERE idpenjualan = ?",
-        [subtotal_nilai, ppn, total_nilai, idpenjualan]
-      );
 
       await connection.commit();
 
       return NextResponse.json(
         {
-          message: "Penjualan created successfully",
+          message: "Sale recorded successfully",
           id: idpenjualan,
           status: "success",
         },
@@ -85,7 +45,7 @@ export async function POST(request: Request) {
       connection.release();
     }
   } catch (error) {
-    console.error("Error creating penjualan:", error);
+    console.error("Error recording sale:", error);
     return NextResponse.json(
       {
         message: "Internal server error",
@@ -95,4 +55,57 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function GET(request: Request) {
+  const authResult = await authenticate(request);
+  if (authResult instanceof NextResponse) return authResult;
+
+  try {
+    const connection = await pool.getConnection();
+    const [rows] = await connection.query(`
+      SELECT p.idpenjualan, p.created_at, p.subtotal_nilai, p.ppn, p.total_nilai, 
+             p.iduser, u.username, p.idmargin_penjualan, mp.persen as margin_persen
+      FROM penjualan p
+      JOIN user u ON p.iduser = u.iduser
+      JOIN margin_penjualan mp ON p.idmargin_penjualan = mp.idmargin_penjualan
+      ORDER BY p.created_at DESC
+    `);
+    connection.release();
+
+    return NextResponse.json({
+      data: rows,
+      status: "success",
+    });
+  } catch (error) {
+    console.error("Error fetching sales:", error);
+    return NextResponse.json(
+      {
+        message: "Internal server error",
+        status: "error",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PUT(request: Request) {
+  const authResult = await authenticate(request);
+  if (authResult instanceof NextResponse) return authResult;
+
+  return NextResponse.json(
+    { message: "PUT method not supported for sales", status: "error" },
+    { status: 405 }
+  );
+}
+
+export async function DELETE(request: Request) {
+  const authResult = await authenticate(request);
+  if (authResult instanceof NextResponse) return authResult;
+
+  return NextResponse.json(
+    { message: "DELETE method not supported for sales", status: "error" },
+    { status: 405 }
+  );
 }

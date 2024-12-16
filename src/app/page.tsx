@@ -1,4 +1,4 @@
-import ECommerce from "@/components/Dashboard/E-commerce";
+import Dashboard from "@/components/Dashboard/Dashboard";
 import { Metadata } from "next";
 import DefaultLayout from "@/components/Layouts/DefaultLayout";
 // src/app/page.tsx
@@ -14,7 +14,7 @@ export default function Home() {
   return (
     <ServerTokenProvider>
       <DefaultLayout>
-        <ECommerce />
+        <Dashboard />
       </DefaultLayout>
     </ServerTokenProvider>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import DataTable from 'react-data-table-component';
 
 interface Pengadaan {
@@ -12,15 +12,15 @@ interface Pengadaan {
   subtotal_nilai: number;
   ppn: number;
   total_nilai: number;
- }
+}
 
- interface Penerimaan {
+interface Penerimaan {
   idpenerimaan: number;
-  reception_date : Date;
+  reception_date: Date;
   status: 'A' | 'C' | 'D' | 'P';
   idpengadaan: number;
-received_by: string;
- }
+  received_by: string;
+}
 
 interface DetailPengadaan {
   iddetail_pengadaan: number;
@@ -44,8 +44,9 @@ interface Vendor {
   vendor_name: string;
 }
 
-interface PenerimaanFormData {
-  [key: number]: number; // idbarang: jumlah
+interface RemainingItem {
+  idbarang: number;
+  remaining: number;
 }
 
 export default function PengadaanPage() {
@@ -54,32 +55,28 @@ export default function PengadaanPage() {
   const [barang, setBarang] = useState<Barang[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPenerimaanFormOpen, setIsPenerimaanFormOpen] = useState(false);
   const [editingPengadaan, setEditingPengadaan] = useState<Pengadaan | null>(null);
+  const [remainingItems, setRemainingItems] = useState<RemainingItem[]>([]);
+  const [filterText, setFilterText] = useState("");
+  const [resetPaginationToggle, setResetPaginationToggle] = useState(false);
   const [formData, setFormData] = useState({
     vendor_idvendor: 0,
+    user_iduser: 1,
     details: [{ idbarang: 0, jumlah: 0 }],
   });
-  const [penerimaanFormData, setPenerimaanFormData] = useState<PenerimaanFormData>({});
+  const [penerimaanFormData, setPenerimaanFormData] = useState<{ [key: string]: { jumlah: number, harga_satuan: number, subtotal: number } }>({});
+  const [subtotal, setSubtotal] = useState(0);
 
-
-  const fetchPengadaan = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/pengadaan?include_reception_status=true");
-      const result = await response.json();
-      if (result.data) {
-        setPengadaan(result.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch pengadaan:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-  
+  useEffect(() => {
+    const newSubtotal = Object.values(penerimaanFormData).reduce((acc, item) => {
+      return acc + (item.subtotal || 0);
+    }, 0);
+    setSubtotal(newSubtotal);
+  }, [penerimaanFormData]);
 
   const fetchBarang = async () => {
     try {
@@ -105,15 +102,15 @@ export default function PengadaanPage() {
     }
   };
 
-  const fetchDetailPengadaan = async (idpengadaan: number) => {
+  const fetchRemainingItems = async (idpengadaan: number) => {
     try {
-      const response = await fetch(`/api/pengadaan/${idpengadaan}`);
+      const response = await fetch(`/api/penerimaan/${idpengadaan}/remaining`);
       const result = await response.json();
-      if (result.data) {
-        setDetailPengadaan(result.data);
+      if (result.items) {
+        setRemainingItems(result.items);
       }
     } catch (error) {
-      console.error("Failed to fetch detail pengadaan:", error);
+      console.error("Failed to fetch remaining items:", error);
     }
   };
 
@@ -122,6 +119,28 @@ export default function PengadaanPage() {
     fetchBarang();
     fetchVendors();
   }, []);
+
+  const handleChange = (idbarang: string, field: string, value: string) => {
+    setPenerimaanFormData(prevState => {
+      const detailItem = detailPengadaan.find(item => item.idbarang.toString() === idbarang);
+      const currentItem = prevState[idbarang] || { 
+        jumlah: 0, 
+        harga_satuan: detailItem ? detailItem.harga_satuan : 0, 
+        subtotal: 0 
+      };
+      const updatedItem = {
+        ...currentItem,
+        [field]: parseFloat(value) || 0
+      };
+      
+      updatedItem.subtotal = updatedItem.jumlah * updatedItem.harga_satuan;
+
+      return {
+        ...prevState,
+        [idbarang]: updatedItem
+      };
+    });
+  };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -181,61 +200,87 @@ export default function PengadaanPage() {
     } catch (error) {
       console.error("Error saving pengadaan:", error);
     }
-  }; 
-  const fetchUserId = async () => {
+  };
+
+  const fetchPengadaan = async () => {
     try {
-      const response = await fetch('/api/auth');
-      if (!response.ok) {
-        throw new Error('Failed to fetch user ID');
+      setIsLoading(true);
+      const response = await fetch("/api/pengadaan?include_reception_status=true");
+      const result = await response.json();
+      if (result.data) {
+        setPengadaan(result.data);
       }
-      const data = await response.json();
-      return data.iduser;
     } catch (error) {
-      console.error('Error fetching user ID:', error);
-      return null;
+      console.error("Failed to fetch pengadaan:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
-   const handlePenerimaanSubmit = async (e: React.FormEvent) => {
-    const iduser = await fetchUserId();
-    if (!iduser) {
-      throw new Error('User ID not found');
+
+  const fetchDetailPengadaan = async (idpengadaan: number) => {
+    try {
+      const response = await fetch(`/api/pengadaan/${idpengadaan}`);
+      const result = await response.json();
+
+      if (result.data) {
+        setDetailPengadaan(result.data);
+        initializePenerimaanFormData(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch detail pengadaan:", error);
+    }
+  };
+
+  const initializePenerimaanFormData = (details: DetailPengadaan[]) => {
+    const initialData: { [key: string]: { jumlah: number; harga_satuan: number; subtotal: number } } = {};
+    details.forEach(detail => {
+      const remainingItem = remainingItems.find(item => item.idbarang === detail.idbarang);
+      initialData[detail.idbarang] = {
+        jumlah: 0,
+        harga_satuan: detail.harga_satuan,
+        subtotal: 0,
+        max: remainingItem ? remainingItem.remaining : detail.jumlah
+      };
+    });
+    setPenerimaanFormData(initialData);
+  };
+
+  const handlePenerimaanSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedId) {
+      console.error("No selectedId found");
+      return;
     }
 
-    e.preventDefault();
-    if (!editingPengadaan) return;
-  
     try {
-      const response = await fetch(`/api/pengadaan/${editingPengadaan.idpengadaan}/penerimaan`, {
+      const response = await fetch(`/api/pengadaan/${selectedId}/penerimaan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: 'P', // Assuming 'A' for active status
-          user_iduser: iduser, // Replace with actual user ID
-          details: Object.entries(penerimaanFormData).map(([idbarang, jumlah]) => ({
+          status: 'A',
+          iduser: 1, // Replace with actual user ID
+          details: Object.entries(penerimaanFormData).map(([idbarang, { jumlah, harga_satuan, subtotal }]) => ({
             idbarang: parseInt(idbarang),
-            jumlah
+            jumlah: jumlah,
+            harga_satuan: harga_satuan,
+            subtotal: subtotal
           }))
         }),
       });
-  
+
       if (response.ok) {
         setIsPenerimaanFormOpen(false);
         setPenerimaanFormData({});
+        setSelectedId(null);
         await fetchPengadaan();
       } else {
-        throw new Error ("Failed to submit penerimaan");
+        const errorData = await response.json();
+        console.error("Error submitting penerimaan:", errorData);
       }
     } catch (error) {
       console.error("Error submitting penerimaan:", error);
     }
   };
-
-const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
-  setPenerimaanFormData(prev => ({
-    ...prev,
-    [idbarang]: parseInt(jumlah) || 0
-  }));
-};
 
   const handleStatusChange = async (idpengadaan: number, status: 'A' | 'I') => {
     try {
@@ -253,16 +298,46 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
     }
   };
 
-
-  
   const handleReceiveGoods = async (pengadaan: Pengadaan) => {
+    setSelectedId(pengadaan.idpengadaan);
     setEditingPengadaan(pengadaan);
     await fetchDetailPengadaan(pengadaan.idpengadaan);
+    await fetchRemainingItems(pengadaan.idpengadaan);
     setIsPenerimaanFormOpen(true);
   };
-  
 
-  
+  const filteredItems = pengadaan.filter(
+    item =>
+      (item.idpengadaan?.toString() || '').toLowerCase().includes(filterText.toLowerCase()) ||
+      (item.nama_vendor || '').toLowerCase().includes(filterText.toLowerCase()) ||
+      (item.timestamp || '').toLowerCase().includes(filterText.toLowerCase()) ||
+      (item.status || '').toLowerCase().includes(filterText.toLowerCase())
+  );
+
+  const subHeaderComponentMemo = useMemo(() => {
+    const handleClear = () => {
+      if (filterText) {
+        setResetPaginationToggle(!resetPaginationToggle);
+        setFilterText('');
+      }
+    };
+
+    return (
+      <div className="flex items-center space-x-4 mb-4">
+        <input
+          type="text"
+          placeholder="Search Procurement..."
+          value={filterText}
+          onChange={e => setFilterText(e.target.value)}
+          className="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button onClick={handleClear} className="p-2 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none">
+          Clear
+        </button>
+      </div>
+    );
+  }, [filterText, resetPaginationToggle]);
+
   const columns = [
     {
       name: 'ID',
@@ -317,25 +392,29 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
       name: 'Reception Status',
       selector: (row: Penerimaan) => row.status,
       sortable: true,
-      cell: (row: Penerimaan) => (
-        <span className={`px-2 py-1 rounded text-sm ${
-          row.status === 'A' ? 'bg-blue-100 text-blue-800' :
-          row.status === 'D' ? 'bg-gray-100 text-gray-800' :
-          row.status === 'C' ? 'bg-green-100 text-green-800' :
- 'bg-yellow-100 text-yellow-800'
-        }`}>
-          {
-            row.status === 'A' ? 'Partially Received':
-          row.status === 'C' ? 'Completed' :
-          row.status === 'D' ? 'Cancelled' :
-          'Pending'}
-         
-        </span>
-      )
+      cell: (row: Penerimaan) => {
+        const status = row.status || '';
+        return (
+          <span className={`px-2 py-1 rounded text-sm ${
+            status === 'C' ? 'bg-green-100 text-green-800' :
+            status === 'A' ? 'bg-blue-100 text-blue-800' :
+            status === 'D' ? 'bg-gray-100 text-gray-800' :
+            'bg-yellow-100 text-yellow-800'
+          }`}>
+            {
+              status === 'C' ? 'Completed' :
+              status === 'A' ? 'Partially Received' :
+              status === 'D' ? 'Cancelled' :
+              status === 'P' ? 'Pending' :
+              'Unknown'
+            }
+          </span>
+        );
+      }
     },
     {
       name: 'Actions',
-      cell: (row: Penerimaan, rowpengadaan: Pengadaan) => (
+      cell: (row: Penerimaan) => (
         <div className="flex space-x-2">
           <button
             onClick={() => {
@@ -343,18 +422,18 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
               fetchDetailPengadaan(row.idpengadaan);
               setIsDetailOpen(true);
             }}
-            className="bg-blue-500 w-full text-white p-2 rounded"
+            className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition duration-300"
           >
             Detail
           </button>
-          {row.status !== 'C' && row.reception_status !== 'Sudah Diterima' && (
-  <button
-    onClick={() => handleReceiveGoods(row)}
-    className="bg-green-500 text-white p-2 rounded"
-  >
-    Terima Pengadaan
-  </button>
-)}
+          {(row.status !== 'C' && row.status !== 'Sudah Diterima') && (
+            <button
+              onClick={() => handleReceiveGoods(row)}
+              className="bg-green-500 text-white p-2 rounded hover:bg-green-600 transition duration-300"
+            >
+              Terima Pengadaan
+            </button>
+          )}
         </div>
       ),
     },
@@ -362,34 +441,42 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
 
   return (
     <div className="container mx-auto p-4">
-      <div className=" mx-auto">
-        <h1 className="text-2xl font-bold mb-4">Procurement Management</h1>
+      <div className="mx-auto">
+        <h1 className="text-2xl font-bold mb-4 text-gray-800">Procurement Management</h1>
         <button 
           onClick={() => {
             setEditingPengadaan(null);
             setFormData({
               vendor_idvendor: 0,
+              user_iduser: 1,
               details: [{ idbarang: 0, jumlah: 0 }],
             });
             setIsOpen(true);
           }} 
-          className="bg-green-500 text-white p-2 rounded mb-4"
+          className="bg-green-500 text-white p-2 rounded mb-4 hover:bg-green-600 transition duration-300"
         >
           Add New Procurement
         </button>
 
         <DataTable
           columns={columns}
-          data={pengadaan}
+          data={filteredItems}
           progressPending={isLoading}
           pagination
+          paginationResetDefaultPage={resetPaginationToggle}
+          subHeader
+          subHeaderComponent={subHeaderComponentMemo}
+          persistTableHead
           responsive
+          highlightOnHover
+
+          pointerOnHover
         />
       </div>
 
       {isOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full">
             <h2 className="text-xl font-bold mb-4">{editingPengadaan ? "Edit Procurement" : "Add New Procurement"}</h2>
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
@@ -446,13 +533,13 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
                     </p>
                   </div>
                   <div className="col-span-1 flex items-end">
-                    <button type="button" onClick={() => removeDetailRow(index)} className="bg-red-500 text-white p-2 rounded">
+                    <button type="button" onClick={() => removeDetailRow(index)} className="bg-red-500 text-white p-2 rounded hover:bg-red-600 transition duration-300">
                       Remove
                     </button>
                   </div>
                 </div>
               ))}
-              <button type="button" onClick={addDetailRow} className="bg-blue-500 text-white p-2 rounded mb-4">
+              <button type="button" onClick={addDetailRow} className="bg-blue-500 text-white p-2 rounded mb-4 hover:bg-blue-600 transition duration-300">
                 Add Detail
               </button>
               <div className="mb-4">
@@ -462,10 +549,10 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
                 </p>
               </div>
               <div className="flex justify-end">
-                <button type="button" onClick={() => setIsOpen(false)} className="bg-gray-300 text-black p-2 rounded mr-2">
+                <button type="button" onClick={() => setIsOpen(false)} className="bg-gray-300 text-black p-2 rounded mr-2 hover:bg-gray-400 transition duration-300">
                   Cancel
                 </button>
-                <button type="submit" className="bg-blue-500 text-white p-2 rounded">
+                <button type="submit" className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition duration-300">
                   Save
                 </button>
               </div>
@@ -475,8 +562,8 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
       )}
 
       {isDetailOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full">
             <h2 className="text-xl font-bold mb-4">Procurement Details</h2>
             <DataTable
               columns={[
@@ -506,9 +593,10 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
               data={detailPengadaan}
               pagination
               responsive
+              highlightOnHover
             />
             <div className="flex justify-end mt-4">
-              <button onClick={() => setIsDetailOpen(false)} className="bg-blue-500 text-white p-2 rounded">
+              <button onClick={() => setIsDetailOpen(false)} className="bg-blue-500 text-white p-2 rounded hover:bg-blue-600 transition duration-300">
                 Close
               </button>
             </div>
@@ -516,49 +604,70 @@ const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
         </div>
       )}
 
-{isPenerimaanFormOpen && (
-  <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-    <div className="relative top-20 mx-auto p-5 border w-1/2 shadow-lg rounded-md bg-white">
-      <h2 className="text-xl font-bold mb-4">Penerimaan Barang</h2>
-      <form onSubmit={handlePenerimaanSubmit}>
-        <div className="grid gap-4 py-4">
-          {detailPengadaan.map((detail) => {
-            const remainingQuantity = detail.jumlah - (detail.jumlah_diterima || 0);
-            return (
-              <div key={detail.idbarang} className="grid grid-cols-4 items-center gap-4">
-                <label htmlFor={`quantity-${detail.idbarang}`} className="text-right">
-                  {detail.nama_barang}
-                </label>
-                <div className="col-span-3">
-                  <input
-                    id={`quantity-${detail.idbarang}`}
-                    type="number"
-                    min="0"
-                    max={remainingQuantity}
-                    value={penerimaanFormData[detail.idbarang] || 0}
-                    onChange={(e) => handlePenerimaanQuantityChange(detail.idbarang, e.target.value)}
-                    className="w-full p-2 border rounded"
-                  />
-                  <span className="text-sm text-gray-500 mt-1 block">
-                    Available: {remainingQuantity} of {detail.jumlah}
-                  </span>
-                </div>
+      {isPenerimaanFormOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full">
+            <h2 className="text-xl font-bold mb-4">Penerimaan Barang untuk Pengadaan ID: {selectedId}</h2>
+            <form onSubmit={handlePenerimaanSubmit}>
+              {detailPengadaan.map((item) => {
+                const remainingItem = remainingItems.find(ri => ri.idbarang === item.idbarang);
+                const maxQuantity = remainingItem ? remainingItem.remaining : 0;
+                return (
+                  <div key={item.idbarang} className="mb-4 flex items-center gap-4">
+                    <span className="flex-1">{item.nama_barang}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      max={maxQuantity}
+                      value={penerimaanFormData[item.idbarang]?.jumlah || 0}
+                      onChange={(e) => handleChange(item.idbarang.toString(), 'jumlah', e.target.value)}
+                      className="w-24 px-2 py-1 border rounded"
+                    />
+                    <span className="text-sm text-gray-500">
+                      Sisa: {maxQuantity}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      Harga Satuan:
+                    </span>
+                    <input
+                      type="number"
+                      name="harga_satuan"
+                      value={penerimaanFormData[item.idbarang]?.harga_satuan || item.harga_satuan || ''}
+                      onChange={e => handleChange(item.idbarang.toString(), 'harga_satuan', e.target.value)}
+                      placeholder="Harga Satuan"
+                      className="w-24 px-2 py-1 border rounded"
+                    />
+                    <span className="text-sm text-gray-500">
+                      Subtotal: {(penerimaanFormData[item.idbarang]?.subtotal || 0).toLocaleString()}
+                    </span>
+                  </div>
+                );
+              })}
+              <div className="mt-4 text-right">
+                <span className="font-bold">Total Subtotal: {subtotal.toLocaleString()}</span>
               </div>
-            );
-          })}
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsPenerimaanFormOpen(false);
+                    setSelectedId(null);
+                  }}
+                  className="px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 transition duration-300"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition duration-300"
+                >
+                  Simpan Penerimaan
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-        <div className="flex justify-end gap-4">
-          <button type="button" onClick={() => setIsPenerimaanFormOpen(false)} className="bg-gray-300 text-black p-2 rounded">
-            Cancel
-          </button>
-          <button type="submit" className="bg-blue-500 text-white p-2 rounded">
-            Submit Penerimaan
-          </button>
-        </div>
-      </form>
-    </div>
-  </div>
-)}
+      )}
     </div>
   );
 }

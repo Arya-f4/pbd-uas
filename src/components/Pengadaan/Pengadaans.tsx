@@ -12,8 +12,15 @@ interface Pengadaan {
   subtotal_nilai: number;
   ppn: number;
   total_nilai: number;
-  reception_status: 'Belum Diterima' | 'Diterima Sebagian' | 'Sudah Diterima';
-}
+ }
+
+ interface Penerimaan {
+  idpenerimaan: number;
+  reception_date : Date;
+  status: 'A' | 'C' | 'D' | 'P';
+  idpengadaan: number;
+received_by: string;
+ }
 
 interface DetailPengadaan {
   iddetail_pengadaan: number;
@@ -42,11 +49,14 @@ interface PenerimaanFormData {
 }
 
 export default function PengadaanPage() {
+      const [details, setDetails] = useState([{ idbarang: '', jumlah: '', harga_satuan: '', subtotal: 0 }]);
+
   const [pengadaan, setPengadaan] = useState<Pengadaan[]>([]);
   const [detailPengadaan, setDetailPengadaan] = useState<DetailPengadaan[]>([]);
   const [barang, setBarang] = useState<Barang[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPenerimaanFormOpen, setIsPenerimaanFormOpen] = useState(false);
@@ -55,22 +65,18 @@ export default function PengadaanPage() {
     vendor_idvendor: 0,
     details: [{ idbarang: 0, jumlah: 0 }],
   });
-  const [penerimaanFormData, setPenerimaanFormData] = useState<PenerimaanFormData>({});
+  const [penerimaanFormData, setPenerimaanFormData] = useState<{ [key: string]: { jumlah: number, harga_satuan: number, subtotal: number } }>({});
 
-  const fetchPengadaan = async () => {
-    try {
-      setIsLoading(true);
-      const response = await fetch("/api/pengadaan?include_reception_status=true");
-      const result = await response.json();
-      if (result.data) {
-        setPengadaan(result.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch pengadaan:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const [subtotal, setSubtotal] = useState(0);
+
+
+  useEffect(() => {
+    const newSubtotal = Object.values(penerimaanFormData).reduce((acc, item) => {
+      return acc + (item.subtotal || 0);
+    }, 0);
+    setSubtotal(newSubtotal);
+  }, [penerimaanFormData]);
+  console.log(penerimaanFormData)
 
   const fetchBarang = async () => {
     try {
@@ -82,6 +88,37 @@ export default function PengadaanPage() {
     } catch (error) {
       console.error("Failed to fetch barang:", error);
     }
+  };
+
+
+
+  const handleTerimaBarang = async (id: number) => {
+    setSelectedId(id);
+    await fetchDetailPengadaan(id);
+    setIsPenerimaanFormOpen(true);
+  };
+
+  const handleChange = (idbarang: string, field: string, value: string) => {
+    setPenerimaanFormData(prevState => {
+      const detailItem = detailPengadaan.find(item => item.idbarang.toString() === idbarang);
+      const currentItem = prevState[idbarang] || { 
+        jumlah: 0, 
+        harga_satuan: detailItem ? detailItem.harga_satuan : 0, 
+        subtotal: 0 
+      };
+      const updatedItem = {
+        ...currentItem,
+        [field]: parseFloat(value) || 0
+      };
+      
+      // Always recalculate subtotal when either jumlah or harga_satuan changes
+      updatedItem.subtotal = updatedItem.jumlah * updatedItem.harga_satuan;
+
+      return {
+        ...prevState,
+        [idbarang]: updatedItem
+      };
+    });
   };
 
   const fetchVendors = async () => {
@@ -96,23 +133,13 @@ export default function PengadaanPage() {
     }
   };
 
-  const fetchDetailPengadaan = async (idpengadaan: number) => {
-    try {
-      const response = await fetch(`/api/pengadaan/${idpengadaan}`);
-      const result = await response.json();
-      if (result.data) {
-        setDetailPengadaan(result.data);
-      }
-    } catch (error) {
-      console.error("Failed to fetch detail pengadaan:", error);
-    }
-  };
 
   useEffect(() => {
     fetchPengadaan();
     fetchBarang();
     fetchVendors();
   }, []);
+  
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -172,22 +199,97 @@ export default function PengadaanPage() {
     } catch (error) {
       console.error("Error saving pengadaan:", error);
     }
+  }; 
+  const fetchUserId = async () => {
+    try {
+      const response = await fetch('/api/auth');
+      if (!response.ok) {
+        throw new Error('Failed to fetch user ID');
+      }
+      const data = await response.json();
+      return data.iduser;
+    } catch (error) {
+      console.error('Error fetching user ID:', error);
+      return null;
+    }
   };
 
+  const fetchPengadaan = async () => {
+    try {
+      setIsLoading(true);
+      const response = await fetch("/api/pengadaan?include_reception_status=true");
+      const result = await response.json();
+      if (result.data) {
+        setPengadaan(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch pengadaan:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const fetchDetailPengadaan = async (idpengadaan: number) => {
+    try {
+      const response = await fetch(`/api/pengadaan/${idpengadaan}`);
+      const result = await response.json();
+
+      if (result.data) {
+        setDetailPengadaan(result.data);
+        initializePenerimaanFormData(result.data);
+      }
+    } catch (error) {
+      console.error("Failed to fetch detail pengadaan:", error);
+    }
+  };
+  const initializePenerimaanFormData = (details: DetailPengadaan[]) => {
+    const initialData: { [key: string]: { jumlah: number; harga_satuan: number; subtotal: number } } = {};
+    details.forEach(detail => {
+      initialData[detail.idbarang] = {
+        jumlah: 0,
+        harga_satuan: detail.harga_satuan,
+        subtotal: 0
+      };
+    });
+    setPenerimaanFormData(initialData);
+  };
+
+
+
+
+
+  const fetchRemainingQuantities = async (idpengadaan: number) => {
+    const response = await fetch(`/api/pengadaan/${idpengadaan}/remaining`);
+    const data = await response.json();
+    return data.items;
+  };
+
+  const handleReceiveClick = async (pengadaan: Pengadaan) => {
+    if (pengadaan.status === 'C' || pengadaan.status === 'D') return;
+    
+    setEditingPengadaan(pengadaan);
+    const remainingItems = await fetchRemainingQuantities(pengadaan.idpengadaan);
+    setDetailPengadaan(remainingItems);
+    setIsPenerimaanFormOpen(true);
+  };
+
+ 
   const handlePenerimaanSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingPengadaan) return;
+    if (!selectedId) return;
 
     try {
-      const response = await fetch(`/api/pengadaan/${editingPengadaan.idpengadaan}/penerimaan`, {
+      const response = await fetch(`/api/pengadaan/${selectedId}/penerimaan`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          status: 'A', // Assuming 'A' for active status
-          iduser: 1, // Replace with actual user ID
-          details: Object.entries(penerimaanFormData).map(([idbarang, jumlah]) => ({
+          status: 'A',
+          iduser, // Replace with actual user ID
+          details: Object.entries(penerimaanFormData).map(([idbarang, { jumlah, harga_satuan, subtotal }]) => ({
             idbarang: parseInt(idbarang),
-            jumlah
+            jumlah: jumlah,
+            harga_satuan: harga_satuan,
+            subtotal: subtotal
           }))
         }),
       });
@@ -195,20 +297,15 @@ export default function PengadaanPage() {
       if (response.ok) {
         setIsPenerimaanFormOpen(false);
         setPenerimaanFormData({});
+        setSelectedId(null);
         await fetchPengadaan();
       } else {
-        throw new Error ("Failed to submit penerimaan");
+        const errorData = await response.json();
+        console.error("Error submitting penerimaan:", errorData);
       }
     } catch (error) {
       console.error("Error submitting penerimaan:", error);
     }
-  };
-
-  const handlePenerimaanQuantityChange = (idbarang: number, jumlah: string) => {
-    setPenerimaanFormData(prev => ({
-      ...prev,
-      [idbarang]: parseInt(jumlah) || 0
-    }));
   };
 
   const handleStatusChange = async (idpengadaan: number, status: 'A' | 'I') => {
@@ -227,12 +324,16 @@ export default function PengadaanPage() {
     }
   };
 
+
+  
   const handleReceiveGoods = async (pengadaan: Pengadaan) => {
     setEditingPengadaan(pengadaan);
     await fetchDetailPengadaan(pengadaan.idpengadaan);
     setIsPenerimaanFormOpen(true);
   };
+  
 
+  
   const columns = [
     {
       name: 'ID',
@@ -285,21 +386,27 @@ export default function PengadaanPage() {
     },
     {
       name: 'Reception Status',
-      selector: (row: Pengadaan) => row.reception_status,
+      selector: (row: Penerimaan) => row.status,
       sortable: true,
-      cell: (row: Pengadaan) => (
+      cell: (row: Penerimaan) => (
         <span className={`px-2 py-1 rounded text-sm ${
-          row.reception_status === 'Sudah Diterima' ? 'bg-green-100 text-green-800' :
-          row.reception_status === 'Diterima Sebagian' ? 'bg-yellow-100 text-yellow-800' :
-          'bg-red-100 text-red-800'
+          row.status === 'C' ? 'bg-green-100 text-green-800' :
+          row.status === 'A' ? 'bg-blue-100 text-blue-800' :
+          row.status === 'D' ? 'bg-gray-100 text-gray-800' :
+ 'bg-yellow-100 text-yellow-800'
         }`}>
-          {row.reception_status}
+          {
+            row.status === 'C' ? 'Completed' :
+            row.status === 'A' ? 'Partially Received':
+          row.status === 'D' ? 'Cancelled' :
+          'Pending'}
+         
         </span>
-      ),
+      )
     },
     {
       name: 'Actions',
-      cell: (row: Pengadaan) => (
+      cell: (row: Penerimaan, rowpengadaan: Pengadaan) => (
         <div className="flex space-x-2">
           <button
             onClick={() => {
@@ -307,26 +414,26 @@ export default function PengadaanPage() {
               fetchDetailPengadaan(row.idpengadaan);
               setIsDetailOpen(true);
             }}
-            className="bg-blue-500 text-white p-2 rounded"
+            className="bg-blue-500 w-full text-white p-2 rounded"
           >
             Detail
           </button>
-          {row.status === 'A' && row.reception_status !== 'Sudah Diterima' && (
-            <button
-              onClick={() => handleReceiveGoods(row)}
-              className="bg-green-500 text-white p-2 rounded"
-            >
-              Terima Pengadaan
-            </button>
-          )}
+          {row.status !== 'C' && row.reception_status !== 'Sudah Diterima' && (
+  <button
+    onClick={() => handleReceiveGoods(row)}
+    className="bg-green-500 text-white p-2 rounded"
+  >
+    Terima Pengadaan
+  </button>
+)}
         </div>
       ),
     },
   ];
 
   return (
-    <div className="container mx-auto p-4 lg:pl-64">
-      <div className=" max-w-6xl mx-auto">
+    <div className="container mx-auto p-4">
+      <div className=" mx-auto">
         <h1 className="text-2xl font-bold mb-4">Procurement Management</h1>
         <button 
           onClick={() => {
@@ -478,45 +585,57 @@ export default function PengadaanPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {isPenerimaanFormOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
-            <h2 className="text-xl font-bold mb-4">Penerimaan Barang</h2>
+      )}      {isPenerimaanFormOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+          <div className="bg-white p-6 rounded-lg max-w-2xl w-full">
+            <h2 className="text-xl font-bold mb-4">Penerimaan Barang untuk Pengadaan ID: {selectedId}</h2>
             <form onSubmit={handlePenerimaanSubmit}>
-              <div className="grid gap-4 py-4">
-                {detailPengadaan.map((detail) => {
-                  const remainingQuantity = detail.jumlah - (detail.jumlah_diterima || 0);
-                  return (
-                    <div key={detail.idbarang} className="grid grid-cols-4 items-center gap-4">
-                      <label htmlFor={`quantity-${detail.idbarang}`} className="text-right">
-                        {detail.nama_barang}
-                      </label>
-                      <div className="col-span-3">
-                        <input
-                          id={`quantity-${detail.idbarang}`}
-                          type="number"
-                          min="0"
-                          max={remainingQuantity}
-                          value={penerimaanFormData[detail.idbarang] || 0}
-                          onChange={(e) => handlePenerimaanQuantityChange(detail.idbarang, e.target.value)}
-                          className="w-full p-2 border rounded"
-                        />
-                        <span className="text-sm text-gray-500 mt-1 block">
-                          Available: {remainingQuantity} of {detail.jumlah}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
+              {detailPengadaan.map((item) => (
+                <div key={item.idbarang} className="mb-4 flex items-center gap-4">
+                  <span className="flex-1">{item.nama_barang}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={item.jumlah}
+                    value={penerimaanFormData[item.idbarang]?.jumlah || 0}
+                    onChange={(e) => handleChange(item.idbarang.toString(), 'jumlah', e.target.value)}
+                    className="w-24 px-2 py-1 border rounded"
+                  />
+                  <span className="text-sm text-gray-500">
+                    Sisa: {item.jumlah}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    Harga Satuan:
+                  </span>
+                  <input
+                    type="number"
+                    name="harga_satuan"
+                    value={penerimaanFormData[item.idbarang]?.harga_satuan || item.harga_satuan || ''}
+                    onChange={e => handleChange(item.idbarang.toString(), 'harga_satuan', e.target.value)}
+                    placeholder="Harga Satuan"
+                    className="w-24 px-2 py-1 border rounded"
+                  />
+                  <span className="text-sm text-gray-500">
+                    Subtotal: {(penerimaanFormData[item.idbarang]?.subtotal || 0).toLocaleString()}
+                  </span>
+                </div>
+              ))}
+              <div className="mt-4 text-right">
+                <span className="font-bold">Total Subtotal: {subtotal.toLocaleString()}</span>
               </div>
-              <div className="flex justify-end gap-4">
-                <button type="button" onClick={() => setIsPenerimaanFormOpen(false)} className="bg-gray-300 text-black p-2 rounded">
-                  Cancel
+              <div className="flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setIsPenerimaanFormOpen(false)}
+                  className="px-4 py-2 bg-gray-200 rounded"
+                >
+                  Batal
                 </button>
-                <button type="submit" className="bg-blue-500 text-white p-2 rounded">
-                  Submit Penerimaan
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-blue-500 text-white rounded"
+                >
+                  Simpan Penerimaan
                 </button>
               </div>
             </form>
@@ -524,5 +643,7 @@ export default function PengadaanPage() {
         </div>
       )}
     </div>
+    
+    
   );
-}
+};

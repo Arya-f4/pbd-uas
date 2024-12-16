@@ -16,7 +16,7 @@ export async function GET(
     const [rows] = await connection.query(
       `SELECT p.*, dp.idbarang, b.nama AS nama_barang, dp.jumlah, dp.harga_satuan, (dp.jumlah * dp.harga_satuan) AS sub_total
        FROM penjualan p
-       JOIN detail_penjualan dp ON p.idpenjualan = dp.idpenjualan
+       JOIN detail_penjualan dp ON p.idpenjualan = dp.penjualan_idpenjualan
        JOIN barang b ON dp.idbarang = b.idbarang
        WHERE p.idpenjualan = ?`,
       [id]

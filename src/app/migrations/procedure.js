@@ -10,6 +10,7 @@ const connection = mysql.createConnection({
 
 const query = `
 CREATE PROCEDURE InsertPenerimaan(
+
   IN p_status CHAR(1),
   IN p_idpengadaan BIGINT,
   IN p_iduser INT

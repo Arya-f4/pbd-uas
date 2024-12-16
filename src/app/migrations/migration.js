@@ -150,9 +150,9 @@ const query = `
     iddetail_retur INT AUTO_INCREMENT PRIMARY KEY,
     jumlah INT,
     alasan VARCHAR(200),
-    idbarang INT,
+    idretur BIGINT,
     iddetail_penerimaan BIGINT,
-    FOREIGN KEY (idbarang) REFERENCES barang(idbarang),
+    FOREIGN KEY (idretur) REFERENCES retur(idretur),
     FOREIGN KEY (iddetail_penerimaan) REFERENCES detail_penerimaan(iddetail_penerimaan)
   );
 

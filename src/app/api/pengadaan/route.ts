@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 
     try {
       const [result] = await connection.query(
-        "INSERT INTO pengadaan (vendor_idvendor, status, user_iduser) VALUES (?, 'P', ?)",
+        "INSERT INTO pengadaan (vendor_idvendor,timestamp, status, user_iduser) VALUES (?,NOW(), 'P', ?)",
         [vendor_idvendor, user_iduser]
       );
 

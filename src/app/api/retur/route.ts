@@ -1,19 +1,39 @@
 import { NextResponse } from "next/server";
 import pool from "@/lib/db";
 import { authenticate } from "@/lib/authMiddleware";
-
 export async function GET(request: Request) {
   const authResult = await authenticate(request);
   if (authResult instanceof NextResponse) return authResult;
 
+  const url = new URL(request.url);
+  const idretur = url.searchParams.get('idretur');
+
   try {
     const connection = await pool.getConnection();
-    const [rows] = await connection.query(`
-      SELECT r.idretur, r.created_at AS return_date, r.idpenerimaan, u.username AS handled_by
-      FROM retur r
-      JOIN user u ON r.iduser = u.iduser
-      ORDER BY r.created_at DESC
-    `);
+    let query, params;
+
+    if (idretur) {
+      // Fetch detail retur
+      query = `
+        SELECT dr.iddetail_retur, dr.jumlah, dr.alasan, dr.iddetail_penerimaan, dr.idretur,
+               b.nama as nama_barang
+        FROM detail_retur dr
+        JOIN detail_penerimaan dp ON dr.iddetail_penerimaan = dp.iddetail_penerimaan
+        JOIN barang b ON dp.barang_idbarang = b.idbarang
+        WHERE dr.idretur = ?
+      `;
+      params = [idretur];
+    } else {
+      // Fetch main retur list
+      query = `
+        SELECT r.idretur, r.created_at, r.idpenerimaan, r.iduser
+        FROM retur r
+        ORDER BY r.created_at DESC
+      `;
+      params = [];
+    }
+
+    const [rows] = await connection.query(query, params);
     connection.release();
 
     return NextResponse.json({
@@ -21,7 +41,7 @@ export async function GET(request: Request) {
       status: "success",
     });
   } catch (error) {
-    console.error("Error fetching retur:", error);
+    console.error("Error fetching retur data:", error);
     return NextResponse.json(
       {
         message: "Internal server error",
@@ -44,30 +64,29 @@ export async function POST(request: Request) {
     await connection.beginTransaction();
 
     try {
-      const [result] = await connection.query(
+      // Insert retur header
+      const [returResult] = await connection.query(
         "INSERT INTO retur (created_at, idpenerimaan, iduser) VALUES (NOW(), ?, ?)",
         [idpenerimaan, iduser]
       );
-      const idretur = result.insertId;
+      const idretur = (returResult as any).insertId;
 
+      // Insert retur details
       for (const detail of details) {
-        const { idbarang, jumlah, alasan, iddetail_penerimaan } = detail;
-        await connection.query(
-          "INSERT INTO detail_retur (jumlah, alasan, idbarang, iddetail_penerimaan) VALUES (?, ?, ?, ?)",
-          [jumlah, alasan, idbarang, iddetail_penerimaan]
-        );
+        if (detail.jumlah > 0) { // Only insert if there are items to return
+          await connection.query(
+            "INSERT INTO detail_retur (jumlah, alasan, iddetail_penerimaan, idretur) VALUES (?, ?, ?, ?)",
+            [detail.jumlah, detail.alasan, detail.iddetail_penerimaan, idretur]
+          );
+        }
       }
 
       await connection.commit();
-
-      return NextResponse.json(
-        {
-          message: "Retur created successfully",
-          id: idretur,
-          status: "success",
-        },
-        { status: 201 }
-      );
+      return NextResponse.json({
+        message: "Retur created successfully",
+        id: idretur,
+        status: "success",
+      });
     } catch (error) {
       await connection.rollback();
       throw error;
@@ -78,9 +97,10 @@ export async function POST(request: Request) {
     console.error("Error creating retur:", error);
     return NextResponse.json(
       {
-        message: "Internal server error",
+        message: "Error creating retur",
         status: "error",
         error: error instanceof Error ? error.message : "Unknown error",
+        details: error instanceof Error ? error.stack : undefined,
       },
       { status: 500 }
     );

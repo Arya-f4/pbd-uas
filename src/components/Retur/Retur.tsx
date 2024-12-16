@@ -1,179 +1,162 @@
 "use client";
-import React, { useState, useEffect } from "react";
+
+import React, { useState, useEffect, useMemo } from "react";
 import DataTable from "react-data-table-component";
-import { toast } from 'react-toastify'; // For notifications
 
 interface Retur {
   idretur: number;
-  timestamp: string;
-  vendor_idvendor: number;
-  nama_vendor: string;
-  status: string;
+  created_at: string;
+  idpenerimaan: number;
+  iduser: number;
 }
 
 interface DetailRetur {
   iddetail_retur: number;
-  idbarang: number;
-  nama_barang: string;
   jumlah: number;
   alasan: string;
+  iddetail_penerimaan: number;
+  idretur: number;
+  nama_barang: string;
 }
 
-export default function BarangRetur() {
+export default function ReturPage() {
   const [returs, setReturs] = useState<Retur[]>([]);
   const [detailReturs, setDetailReturs] = useState<DetailRetur[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedRetur, setSelectedRetur] = useState<number | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
-  const [returnQuantity, setReturnQuantity] = useState<number>(0);
-  const [returnReason, setReturnReason] = useState<string>("");
+  const [filterText, setFilterText] = useState("");
+  const [detailFilterText, setDetailFilterText] = useState("");
 
-  // Fetch data for retur and detail retur
   const fetchReturs = async () => {
     try {
+      setIsLoading(true);
       const response = await fetch("/api/retur");
       const data = await response.json();
-      setReturs(data);
+      if (data.data) {
+        setReturs(data.data);
+      }
     } catch (error) {
       console.error("Failed to fetch retur data:", error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const fetchDetailReturs = async () => {
+  const fetchDetailReturs = async (idretur: number) => {
     try {
-      const response = await fetch("/api/detail_retur");
+      const response = await fetch(`/api/retur?idretur=${idretur}`);
       const data = await response.json();
-      setDetailReturs(data);
+      if (data.data) {
+        setDetailReturs(data.data);
+      }
     } catch (error) {
       console.error("Failed to fetch detail retur:", error);
     }
   };
 
-  const handleReturnGoods = async () => {
-    if (selectedRetur !== null && returnQuantity > 0 && returnReason) {
-      try {
-        // Simulate saving return data
-        const response = await fetch(`/api/retur/${selectedRetur}`, {
-          method: "POST",
-          body: JSON.stringify({ returnQuantity, returnReason }),
-          headers: { "Content-Type": "application/json" },
-        });
-       
-        if (response.ok) {
-          toast.success("Return processed successfully!");
-          fetchReturs();  // Refresh the retur data after saving
-          setIsModalOpen(false);
-        } else {
-          toast.error("Failed to process return.");
-        }
-      } catch (error) {
-        console.error("Error during return:", error);
-        toast.error("An error occurred.");
-      }
-    } else {
-      toast.warning("Please enter valid return quantity and reason.");
-    }
-  };
-
   useEffect(() => {
     fetchReturs();
-    fetchDetailReturs();
   }, []);
 
+  const handleDetailClick = async (idretur: number) => {
+    setSelectedRetur(idretur);
+    await fetchDetailReturs(idretur);
+  };
+
   const returColumns = [
-    { name: "ID", selector: (row: Retur) => row.idretur, sortable: true },
-    { name: "Vendor", selector: (row: Retur) => row.nama_vendor, sortable: true },
-    { name: "Status", selector: (row: Retur) => row.status, sortable: true },
+    { name: "ID Retur", selector: (row: Retur) => row.idretur, sortable: true },
+    { name: "Tanggal Retur", selector: (row: Retur) => new Date(row.created_at).toLocaleString(), sortable: true },
+    { name: "ID Penerimaan", selector: (row: Retur) => row.idpenerimaan, sortable: true },
+    { name: "ID User", selector: (row: Retur) => row.iduser, sortable: true },
     {
-      name: "Actions",
+      name: "Aksi",
       cell: (row: Retur) => (
         <button
-          onClick={() => {
-            setSelectedRetur(row.idretur);
-            setIsModalOpen(true);
-          }}
-          className="bg-red-500 text-white p-2 rounded"
+          onClick={() => handleDetailClick(row.idretur)}
+          className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded-full text-sm"
         >
-          Process Return
+          Detail
         </button>
       ),
     },
   ];
 
   const detailReturColumns = [
-    { name: "ID", selector: (row: DetailRetur) => row.iddetail_retur, sortable: true },
-    { name: "Item", selector: (row: DetailRetur) => row.nama_barang, sortable: true },
-    { name: "Quantity", selector: (row: DetailRetur) => row.jumlah, sortable: true },
-    { name: "Reason", selector: (row: DetailRetur) => row.alasan, sortable: true },
+    { name: "ID Detail Retur", selector: (row: DetailRetur) => row.iddetail_retur, sortable: true },
+    { name: "Nama Barang", selector: (row: DetailRetur) => row.nama_barang, sortable: true },
+    { name: "Jumlah", selector: (row: DetailRetur) => row.jumlah, sortable: true },
+    { name: "Alasan", selector: (row: DetailRetur) => row.alasan, sortable: true },
+    { name: "ID Detail Penerimaan", selector: (row: DetailRetur) => row.iddetail_penerimaan, sortable: true },
   ];
+
+  const filteredReturs = useMemo(() => {
+    return returs.filter((retur) => {
+      return (
+        retur.idretur.toString().toLowerCase().includes(filterText.toLowerCase()) ||
+        new Date(retur.created_at).toLocaleString().toLowerCase().includes(filterText.toLowerCase()) ||
+        retur.idpenerimaan.toString().toLowerCase().includes(filterText.toLowerCase()) ||
+        retur.iduser.toString().toLowerCase().includes(filterText.toLowerCase())
+      );
+    });
+  }, [returs, filterText]);
+
+  const filteredDetailReturs = useMemo(() => {
+    return detailReturs.filter((detailRetur) => {
+      return (
+        detailRetur.iddetail_retur.toString().toLowerCase().includes(detailFilterText.toLowerCase()) ||
+        detailRetur.nama_barang.toLowerCase().includes(detailFilterText.toLowerCase()) ||
+        detailRetur.jumlah.toString().toLowerCase().includes(detailFilterText.toLowerCase()) ||
+        detailRetur.alasan.toLowerCase().includes(detailFilterText.toLowerCase()) ||
+        detailRetur.iddetail_penerimaan.toString().toLowerCase().includes(detailFilterText.toLowerCase())
+      );
+    });
+  }, [detailReturs, detailFilterText]);
+
+  const subHeaderComponent = (
+    <input
+      type="text"
+      placeholder="Cari..."
+      value={filterText}
+      onChange={(e) => setFilterText(e.target.value)}
+      className="border border-gray-300 rounded px-2 py-1 mb-2"
+    />
+  );
+
+  const detailSubHeaderComponent = (
+    <input
+      type="text"
+      placeholder="Cari detail..."
+      value={detailFilterText}
+      onChange={(e) => setDetailFilterText(e.target.value)}
+      className="border border-gray-300 rounded px-2 py-1 mb-2"
+    />
+  );
 
   return (
     <div className="container mx-auto p-4">
-      <h1 className="text-2xl font-bold mb-4">Goods Return</h1>
-      
-      {/* Main Return Table */}
+      <h1 className="text-2xl font-bold mb-6">Daftar Retur</h1>
+
       <DataTable
         columns={returColumns}
-        data={returs}
-        progressPending={false}
+        data={filteredReturs}
+        progressPending={isLoading}
         pagination
-        highlightOnHover
         responsive
+        subHeader
+        subHeaderComponent={subHeaderComponent}
       />
 
-      {/* Return Details Table */}
-      <h2 className="text-xl font-semibold mt-6">Return Details</h2>
-      <DataTable
-        columns={detailReturColumns}
-        data={detailReturs.filter((retur) => retur.idretur === selectedRetur)}
-        progressPending={false}
-        pagination
-        highlightOnHover
-        responsive
-      />
-
-      {/* Modal for Processing Return */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
-            <h2 className="text-xl font-bold mb-4">Process Return</h2>
-            <div className="mb-4">
-              <label htmlFor="returnQuantity" className="block text-sm font-medium text-gray-700">
-                Return Quantity
-              </label>
-              <input
-                id="returnQuantity"
-                type="number"
-                className="w-full p-2 border rounded"
-                value={returnQuantity}
-                onChange={(e) => setReturnQuantity(Number(e.target.value))}
-                min={1}
-              />
-            </div>
-            <div className="mb-4">
-              <label htmlFor="returnReason" className="block text-sm font-medium text-gray-700">
-                Return Reason
-              </label>
-              <textarea
-                id="returnReason"
-                className="w-full p-2 border rounded"
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                rows={4}
-              />
-            </div>
-            <div className="flex justify-end">
-              <button onClick={() => setIsModalOpen(false)} className="bg-gray-300 text-black p-2 rounded mr-2">
-                Cancel
-              </button>
-              <button
-                onClick={handleReturnGoods}
-                className="bg-red-500 text-white p-2 rounded"
-                disabled={false}
-              >
-                Process Return
-              </button>
-            </div>
-          </div>
+      {selectedRetur && (
+        <div className="mt-8">
+          <h2 className="text-xl font-bold mb-4">Detail Retur untuk ID: {selectedRetur}</h2>
+          <DataTable
+            columns={detailReturColumns}
+            data={filteredDetailReturs}
+            pagination
+            responsive
+            subHeader
+            subHeaderComponent={detailSubHeaderComponent}
+          />
         </div>
       )}
     </div>

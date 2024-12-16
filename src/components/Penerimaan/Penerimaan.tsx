@@ -1,50 +1,59 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import DataTable from "react-data-table-component";
+import React, { useState, useEffect, useMemo } from "react";
+import DataTable from 'react-data-table-component';
 
 interface Penerimaan {
-  idpenerimaan: number;
-  created_at: string;
-  status: string;
   idpengadaan: number;
-  iduser: number;
-  pengadaan_no: string;
-  user_name: string;
-  total_items: number;
-  received_items: number;
-}
-
-interface DetailPenerimaan {
-  iddetail_penerimaan: number;
   idpenerimaan: number;
-  idbarang: number;
+  reception_date: string;
+  status: string;
+  received_by: string;
   nama_barang: string;
-  jumlah: number;
-  jumlah_diterima: number;
-  harga_satuan: number;
+  jumlah_dipesan: number;
+  total_diterima: number;
+  sisa_barang: number;
 }
 
 interface ReturFormData {
   idpenerimaan: number;
+  iduser: number;
   details: {
     idbarang: number;
     jumlah: number;
     alasan: string;
+    iddetail_penerimaan: number;
   }[];
+}
+
+interface DetailPenerimaan {
+  idpenerimaan: number;
+  reception_date: string;
+  received_by: string;
+  nama_barang: string;
+  jumlah_terima: number;
+  harga_satuan_terima: number;
+  sub_total_terima: number;
+  iddetail_penerimaan: number;
 }
 
 export default function PenerimaanPage() {
   const [penerimaan, setPenerimaan] = useState<Penerimaan[]>([]);
-  const [detailPenerimaan, setDetailPenerimaan] = useState<DetailPenerimaan[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [isReturOpen, setIsReturOpen] = useState(false);
-  const [selectedPenerimaan, setSelectedPenerimaan] = useState<Penerimaan | null>(null);
+  const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
+  const [selectedPengadaan, setSelectedPengadaan] = useState<number | null>(null);
+  const [detailPenerimaan, setDetailPenerimaan] = useState<DetailPenerimaan[]>([]);
   const [returFormData, setReturFormData] = useState<ReturFormData>({
     idpenerimaan: 0,
+    iduser: 1, // Replace with actual user ID
     details: []
   });
+  const [selectedDetailId, setSelectedDetailId] = useState<number | null>(null);
+  const [returQuantity, setReturQuantity] = useState(0);
+  const [returReason, setReturReason] = useState('');
+  const [maxReturQuantity, setMaxReturQuantity] = useState(0);
+  const [filterText, setFilterText] = useState("");
+  const [resetPaginationToggle, setResetPaginationToggle] = useState(false);
 
   const fetchPenerimaan = async () => {
     try {
@@ -61,20 +70,12 @@ export default function PenerimaanPage() {
     }
   };
 
-  const fetchDetailPenerimaan = async (idpenerimaan: number) => {
+  const fetchDetailPenerimaan = async (idpengadaan: number) => {
     try {
-      const response = await fetch(`/api/penerimaan/${idpenerimaan}`);
+      const response = await fetch(`/api/penerimaan/${idpengadaan}/detail`);
       const result = await response.json();
       if (result.data) {
         setDetailPenerimaan(result.data);
-        setReturFormData({
-          idpenerimaan,
-          details: result.data.map((detail: DetailPenerimaan) => ({
-            idbarang: detail.idbarang,
-            jumlah: 0,
-            alasan: ""
-          }))
-        });
       }
     } catch (error) {
       console.error("Failed to fetch detail penerimaan:", error);
@@ -85,196 +86,305 @@ export default function PenerimaanPage() {
     fetchPenerimaan();
   }, []);
 
+  const handleDetailClick = async (idpengadaan: number) => {
+    setSelectedPengadaan(idpengadaan);
+    await fetchDetailPenerimaan(idpengadaan);
+    setIsDetailModalOpen(true);
+  };
+
+  const handleReturSelect = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const selectedValue = event.target.value;
+    if (!selectedValue) {
+      return;
+    }
+
+    const [idpenerimaan, index] = selectedValue.split('-').map(Number);
+
+    if (isNaN(idpenerimaan) || isNaN(index)) {
+      console.error("Invalid ID selected:", selectedValue);
+      return;
+    }
+
+    const selectedDetailPenerimaan = detailPenerimaan[index];
+
+    if (selectedDetailPenerimaan) {
+      setSelectedDetailId(selectedDetailPenerimaan.iddetail_penerimaan);
+      setReturFormData(prev => ({
+        ...prev,
+        idpenerimaan: idpenerimaan,
+      }));
+
+      setReturQuantity(0);
+      setMaxReturQuantity(selectedDetailPenerimaan.jumlah_terima);
+      setReturReason('');
+    } else {
+      console.log("Detail penerimaan not found for selected ID:", idpenerimaan);
+    }
+  };
+
   const handleReturSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!selectedDetailId) {
+      alert("Please select a detail penerimaan first");
+      return;
+    }
+
+    const selectedDetailPenerimaan = detailPenerimaan.find(d => d.iddetail_penerimaan === selectedDetailId);
+
+    if (!selectedDetailPenerimaan) {
+      alert("Selected detail penerimaan not found");
+      return;
+    }
+
+    const returData: ReturFormData = {
+      idpenerimaan: selectedDetailPenerimaan.idpenerimaan,
+      iduser: 1, // Replace with actual user ID
+      details: [{
+        idbarang: 0, // We don't have this information in the current data structure
+        jumlah: returQuantity,
+        alasan: returReason,
+        iddetail_penerimaan: selectedDetailId
+      }]
+    };
+
     try {
       const response = await fetch("/api/retur", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(returFormData),
+        body: JSON.stringify(returData),
       });
+
+      const result = await response.json();
+
       if (response.ok) {
-        setIsReturOpen(false);
+        alert("Retur submitted successfully!");
+        setIsDetailModalOpen(false);
         fetchPenerimaan();
       } else {
-        throw new Error("Failed to submit retur");
+        alert(`Error: ${result.message || "Failed to submit retur"}`);
       }
     } catch (error) {
       console.error("Error submitting retur:", error);
+      alert("An unexpected error occurred");
     }
   };
 
-  const handleReturDetailChange = (idbarang: number, field: 'jumlah' | 'alasan', value: string) => {
-    setReturFormData(prev => ({
-      ...prev,
-      details: prev.details.map(detail => 
-        detail.idbarang === idbarang
-          ? { ...detail, [field]: field === 'jumlah' ? parseInt(value) || 0 : value }
-          : detail
-      )
-    }));
-  };
-
-  const getReceptionStatus = (row: Penerimaan) => {
-    if (row.received_items === 0) return "Not Yet Received";
-    if (row.received_items === row.total_items) return "Fully Received";
-    return "Partially Received";
-  };
-
   const columns = [
-    { name: "ID", selector: (row: Penerimaan) => row.idpenerimaan, sortable: true },
-    { name: "Created At", selector: (row: Penerimaan) => new Date(row.created_at).toLocaleString(), sortable: true },
-    { 
-      name: "Status", 
-      selector: (row: Penerimaan) => getReceptionStatus(row),
+    {
+      name: 'ID Penerimaan',
+      selector: (row: Penerimaan) => row.idpenerimaan,
+      sortable: true,
+    },
+    {
+      name: 'ID Pengadaan',
+      selector: (row: Penerimaan) => row.idpengadaan,
+      sortable: true,
+    },
+    {
+      name: 'Nama Barang',
+      selector: (row: Penerimaan) => row.nama_barang,
+      sortable: true,
+    },
+    {
+      name: 'Jumlah Dipesan',
+      selector: (row: Penerimaan) => row.jumlah_dipesan,
+      sortable: true,
+    },
+    {
+      name: 'Jumlah Diterima Total',
+      selector: (row: Penerimaan) => row.total_diterima,
+      sortable: true,
+    },
+    {
+      name: 'Sisa Barang',
+      selector: (row: Penerimaan) => row.sisa_barang,
+      sortable: true,
+    },
+    {
+      name: 'Status Penerimaan',
+      selector: (row: Penerimaan) => row.status,
       sortable: true,
       cell: (row: Penerimaan) => (
         <span className={`px-2 py-1 rounded text-sm ${
-          row.received_items === 0 ? 'bg-red-100 text-red-800' :
-          row.received_items === row.total_items ? 'bg-green-100 text-green-800' :
+          row.status === 'C' ? 'bg-green-100 text-green-800' :
+          row.status === 'A' ? 'bg-blue-100 text-blue-800' :
+          row.status === 'D' ? 'bg-gray-100 text-gray-800' :
           'bg-yellow-100 text-yellow-800'
         }`}>
-          {getReceptionStatus(row)}
+          {
+            row.status === 'C' ? 'Completed' :
+            row.status === 'A' ? 'Partially Received' :
+            row.status === 'D' ? 'Cancelled' :
+            'Pending'
+          }
         </span>
       )
     },
-    { name: "Pengadaan No", selector: (row: Penerimaan) => row.pengadaan_no, sortable: true },
-    { name: "User", selector: (row: Penerimaan) => row.user_name, sortable: true },
     {
-      name: "Progress",
-      selector: (row: Penerimaan) => `${row.received_items}/${row.total_items}`,
+      name: 'User Penerima',
+      selector: (row: Penerimaan) => row.received_by,
       sortable: true,
     },
     {
-      name: "Actions",
+      name: 'Tanggal Penerimaan',
+      selector: (row: Penerimaan) => row.reception_date,
+      sortable: true,
+      format: (row: Penerimaan) => new Date(row.reception_date).toLocaleString(),
+    },
+    {
+      name: 'Aksi',
       cell: (row: Penerimaan) => (
-        <div className="flex gap-2">
-          <button
-            onClick={() => {
-              setSelectedPenerimaan(row);
-              fetchDetailPenerimaan(row.idpenerimaan);
-              setIsDetailOpen(true);
-            }}
-            className="bg-blue-500 text-white p-2 rounded"
-          >
-            Detail
-          </button>
-          {row.received_items > 0 && (
-            <button
-              onClick={() => {
-                setSelectedPenerimaan(row);
-                fetchDetailPenerimaan(row.idpenerimaan);
-                setIsReturOpen(true);
-              }}
-              className="bg-red-500 text-white p-2 rounded"
-            >
-              Return
-            </button>
-          )}
-        </div>
+        <button
+          onClick={() => handleDetailClick(row.idpengadaan)}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-bold py-1 px-3 rounded-full text-sm transition duration-300"
+        >
+          Detail
+        </button>
       ),
     },
   ];
 
-  const detailColumns = [
-    { name: "Product", selector: (row: DetailPenerimaan) => row.nama_barang, sortable: true },
-    { name: "Quantity Ordered", selector: (row: DetailPenerimaan) => row.jumlah, sortable: true },
-    { name: "Quantity Received", selector: (row: DetailPenerimaan) => row.jumlah_diterima, sortable: true },
-    { name: "Unit Price", selector: (row: DetailPenerimaan) => `Rp ${row.harga_satuan.toLocaleString()}`, sortable: true },
-    { 
-      name: "Status",
-      cell: (row: DetailPenerimaan) => (
-        <span className={`px-2 py-1 rounded text-sm ${
-          row.jumlah_diterima === 0 ? 'bg-red-100 text-red-800' :
-          row.jumlah_diterima === row.jumlah ? 'bg-green-100 text-green-800' :
-          'bg-yellow-100 text-yellow-800'
-        }`}>
-          {row.jumlah_diterima === 0 ? 'Not Received' :
-           row.jumlah_diterima === row.jumlah ? 'Fully Received' :
-           'Partially Received'}
-        </span>
-      )
-    }
-  ];
+  const filteredItems = penerimaan.filter(
+    item =>
+      item.idpenerimaan.toString().toLowerCase().includes(filterText.toLowerCase()) ||
+      item.idpengadaan.toString().toLowerCase().includes(filterText.toLowerCase()) ||
+      item.nama_barang.toLowerCase().includes(filterText.toLowerCase()) ||
+      item.status.toLowerCase().includes(filterText.toLowerCase()) ||
+      item.received_by.toLowerCase().includes(filterText.toLowerCase())
+  );
+
+  const subHeaderComponentMemo = useMemo(() => {
+    const handleClear = () => {
+      if (filterText) {
+        setResetPaginationToggle(!resetPaginationToggle);
+        setFilterText('');
+      }
+    };
+
+    return (
+      <div className="flex items-center space-x-4 mb-4">
+        <input
+          type="text"
+          placeholder="Search Penerimaan..."
+          value={filterText}
+          onChange={e => setFilterText(e.target.value)}
+          className="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button onClick={handleClear} className="p-2 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none transition duration-300">
+          Clear
+        </button>
+      </div>
+    );
+  }, [filterText, resetPaginationToggle]);
 
   return (
-    <div className="container mx-auto p-4 lg:pl-64">
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h1 className="text-2xl font-bold mb-4">Daftar Penerimaan</h1>
-        <DataTable
-          columns={columns}
-          data={penerimaan}
-          progressPending={isLoading}
-          pagination
-          paginationRowsPerPageOptions={[10, 25, 50, 100]}
-          highlightOnHover
-          responsive
-        />
-      </div>
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-6 text-gray-800">Daftar Penerimaan</h1>
 
-      {isDetailOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
-            <h2 className="text-xl font-bold mb-4">Detail Penerimaan</h2>
+      <DataTable
+        columns={columns}
+        data={filteredItems}
+        progressPending={isLoading}
+        pagination
+        paginationResetDefaultPage={resetPaginationToggle}
+        subHeader
+        subHeaderComponent={subHeaderComponentMemo}
+        persistTableHead
+        responsive
+        highlightOnHover
+        pointerOnHover
+      />
+
+      {isDetailModalOpen && selectedPengadaan && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center overflow-y-auto z-50">
+          <div className="bg-white p-6 rounded-lg max-w-4xl w-full">
+            <h2 className="text-xl font-bold mb-4 text-gray-800">Detail Penerimaan untuk Pengadaan ID: {selectedPengadaan}</h2>
+
             <DataTable
-              columns={detailColumns}
+              columns={[
+                { name: 'ID Penerimaan', selector: (row: DetailPenerimaan) => row.idpenerimaan },
+                { name: 'Tanggal Penerimaan', selector: (row: DetailPenerimaan) => new Date(row.reception_date).toLocaleString() },
+                { name: 'User Penerima', selector: (row: DetailPenerimaan) => row.received_by },
+                { name: 'Nama Barang', selector: (row: DetailPenerimaan) => row.nama_barang },
+                { name: 'Jumlah Diterima', selector: (row: DetailPenerimaan) => row.jumlah_terima },
+                { name: 'Harga Satuan', selector: (row: DetailPenerimaan) => row.harga_satuan_terima },
+                { name: 'Sub Total', selector: (row: DetailPenerimaan) => row.sub_total_terima },
+              ]}
               data={detailPenerimaan}
               pagination
-              paginationRowsPerPageOptions={[10, 25, 50, 100]}
-              highlightOnHover
               responsive
+              highlightOnHover
             />
-            <div className="flex justify-end mt-4">
-              <button onClick={() => setIsDetailOpen(false)} className="bg-blue-500 text-white p-2 rounded">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {isReturOpen && (
-        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-          <div className="relative top-20 mx-auto p-5 border w-3/4 shadow-lg rounded-md bg-white">
-            <h2 className="text-xl font-bold mb-4">Return Form</h2>
-            <form onSubmit={handleReturSubmit}>
-              <div className="grid gap-4 py-4">
-                {detailPenerimaan.map((detail) => (
-                  <div key={detail.idbarang} className="grid gap-2">
-                    <label htmlFor={`quantity-${detail.idbarang}`} className="font-medium">{detail.nama_barang}</label>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <input
-                          id={`quantity-${detail.idbarang}`}
-                          type="number"
-                          min="0"
-                          max={detail.jumlah_diterima}
-                          value={returFormData.details.find(d => d.idbarang === detail.idbarang)?.jumlah || 0}
-                          onChange={(e) => handleReturDetailChange(detail.idbarang, 'jumlah', e.target.value)}
-                          placeholder="Quantity to return"
-                          className="w-full p-2 border rounded"
-                        />
-                        <span className="text-sm text-gray-500 mt-1 block">
-                          Max: {detail.jumlah_diterima}
-                        </span>
-                      </div>
-                      <input
-                        id={`reason-${detail.idbarang}`}
-                        value={returFormData.details.find(d => d.idbarang === detail.idbarang)?.alasan || ''}
-                        onChange={(e) => handleReturDetailChange(detail.idbarang, 'alasan', e.target.value)}
-                        placeholder="Reason for return"
-                        className="w-full p-2 border rounded"
-                      />
-                    </div>
-                  </div>
-                ))}
+            <h3 className="text-lg font-semibold mt-6 mb-4 text-gray-800">Form Retur Barang</h3>
+            <form onSubmit={handleReturSubmit} className="space-y-4">
+              <div>
+                <label htmlFor="detailPenerimaan" className="block text-sm font-medium text-gray-700">
+                  Pilih Detail Penerimaan
+                </label>
+                <select
+                  id="detailPenerimaan"
+                  value={selectedDetailId ? `${returFormData.idpenerimaan}-${detailPenerimaan.findIndex(d => d.iddetail_penerimaan === selectedDetailId)}` : ''}
+                  onChange={handleReturSelect}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                  required
+                >
+                  <option value="">Pilih Detail Penerimaan</option>
+                  {detailPenerimaan.map((detail, index) => (
+                    <option
+                      key={`${detail.idpenerimaan}-${index}`}
+                      value={`${detail.idpenerimaan}-${index}`}
+                    >
+                      {`${detail.idpenerimaan} - ${detail.nama_barang} (${detail.jumlah_terima} tersedia)`}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="flex justify-end gap-4 mt-4">
-                <button type="button" onClick={() => setIsReturOpen(false)} className="bg-gray-300 text-black p-2 rounded">
-                  Cancel
+              <div>
+                <label htmlFor="jumlah" className="block text-sm font-medium text-gray-700">Jumlah Retur</label>
+                <input
+                  id="jumlah"
+                  type="number"
+                  value={returQuantity}
+                  onChange={(e) => {
+                    const newValue = parseInt(e.target.value, 10);
+                    if (!isNaN(newValue) && newValue >= 0 && newValue <= maxReturQuantity) {
+                      setReturQuantity(newValue);
+                    }
+                  }}
+                  min="0"
+                  max={maxReturQuantity}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                  required
+                />
+                <p className="mt-1 text-sm text-gray-500">Maximum: {maxReturQuantity}</p>
+              </div>
+              <div>
+                <label htmlFor="alasan" className="block text-sm font-medium text-gray-700">Alasan Retur</label>
+                <textarea
+                  id="alasan"
+                  value={returReason}
+                  onChange={(e) => setReturReason(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                  rows={3}
+                  required
+                />
+              </div>
+              <div className="flex justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsDetailModalOpen(false)}
+                  className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 transition duration-300"
+                >
+                  Tutup
                 </button>
-                <button type="submit" className="bg-blue-500 text-white p-2 rounded">
-                  Submit Return
+                <button
+                  type="submit"
+                  disabled={!selectedDetailId || returQuantity <= 0}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-opacity-50 disabled:opacity-50 disabled:cursor-not-allowed transition duration-300"
+                >
+                  Submit Retur
                 </button>
               </div>
             </form>
